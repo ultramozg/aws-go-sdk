@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	msk "github.com/aws/aws-sdk-go-v2/service/kafka"
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/sasl/aws_msk_iam_v2"
 )
@@ -17,6 +18,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("unable to load SDK config, %v", err)
 	}
+
+	svc := msk.NewFromConfig(cfg)
+	resp, err := svc.ListClustersV2(context.TODO(), &msk.ListClustersV2Input{})
+	fmt.Println(resp)
 
 	mechanism := aws_msk_iam_v2.NewMechanism(cfg)
 	r := kafka.NewReader(kafka.ReaderConfig{
