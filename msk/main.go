@@ -24,28 +24,46 @@ func main() {
 	fmt.Println(resp)
 
 	mechanism := aws_msk_iam_v2.NewMechanism(cfg)
-	r := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:     []string{"b-1-public.devspvdeveuwest1euwest.mv7mz5.c9.kafka.eu-west-1.amazonaws.com:9198", "b-2-public.devspvdeveuwest1euwest.mv7mz5.c9.kafka.eu-west-1.amazonaws.com:9198"},
-		GroupID:     "some-consumer-group",
-		GroupTopics: []string{"some-topic"},
-		Dialer: &kafka.Dialer{
-			Timeout:       10 * time.Second,
-			DualStack:     true,
-			SASLMechanism: mechanism,
-			TLS:           &tls.Config{},
+	transport := &kafka.Transport{
+		SASL: mechanism,
+		TLS:  &tls.Config{},
+	}
+	client := &kafka.Client{
+		Addr:      kafka.TCP("b-1-public.pocregion1.b07vs9.c9.kafka.eu-west-1.amazonaws.com:9198", "b-2-public.pocregion1.b07vs9.c9.kafka.eu-west-1.amazonaws.com:9198"),
+		Timeout:   5 * time.Second,
+		Transport: transport,
+	}
+
+	res, err := client.CreateACLs(context.Background(), &kafka.CreateACLsRequest{
+		ACLs: []kafka.ACLEntry{
+			{
+				Principal:           "User:admin",
+				PermissionType:      kafka.ACLPermissionTypeAllow,
+				Operation:           kafka.ACLOperationTypeRead,
+				ResourceType:        kafka.ResourceTypeTopic,
+				ResourcePatternType: kafka.PatternTypeLiteral,
+				ResourceName:        "fake-topic-for-alice",
+				Host:                "*",
+			},
+			{
+				Principal:           "User:admin",
+				PermissionType:      kafka.ACLPermissionTypeAllow,
+				Operation:           kafka.ACLOperationTypeRead,
+				ResourceType:        kafka.ResourceTypeGroup,
+				ResourcePatternType: kafka.PatternTypeLiteral,
+				ResourceName:        "fake-group-for-bob",
+				Host:                "*",
+			},
 		},
 	})
 
-	for {
-		m, err := r.ReadMessage(context.Background())
-		if err != nil {
-			log.Fatal(err)
-			break
-		}
-		fmt.Printf("message at offset %d: %s = %s\n", m.Offset, string(m.Key), string(m.Value))
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	if err := r.Close(); err != nil {
-		log.Fatal("failed to close reader:", err)
+	for _, err := range res.Errors {
+		if err != nil {
+			log.Println(err)
+		}
 	}
 }
