@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	msk "github.com/aws/aws-sdk-go-v2/service/kafka"
+	types "github.com/aws/aws-sdk-go-v2/service/kafka/types"
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/sasl/aws_msk_iam_v2"
 )
@@ -21,7 +22,6 @@ func main() {
 
 	svc := msk.NewFromConfig(cfg)
 	resp, err := svc.ListClustersV2(context.TODO(), &msk.ListClustersV2Input{})
-	//svc.UpdateConfiguration()
 	fmt.Println(resp)
 
 	mechanism := aws_msk_iam_v2.NewMechanism(cfg)
@@ -94,4 +94,23 @@ func main() {
 			log.Println(err)
 		}
 	}
+
+	//========= Make cluster public ===========
+	// TODO need to fetch the cluster version: K3DWYIK6Y9EEQB
+	arn := "arn:aws:kafka:eu-west-1:748861314284:cluster/poc-region1/96167cca-e109-43c8-a983-1e779e93f993-9"
+	curVersion := "K3DWYIK6Y9EEQB"
+	pub := "SERVICE_PROVIDED_EIPS"
+	status, err := svc.UpdateConnectivity(context.TODO(), &msk.UpdateConnectivityInput{
+		ClusterArn:     &arn,
+		CurrentVersion: &curVersion,
+		ConnectivityInfo: &types.ConnectivityInfo{
+			PublicAccess: &types.PublicAccess{
+				Type: &pub,
+			},
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(status)
 }
