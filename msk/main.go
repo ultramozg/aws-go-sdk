@@ -21,6 +21,7 @@ func main() {
 
 	svc := msk.NewFromConfig(cfg)
 	resp, err := svc.ListClustersV2(context.TODO(), &msk.ListClustersV2Input{})
+	//svc.UpdateConfiguration()
 	fmt.Println(resp)
 
 	mechanism := aws_msk_iam_v2.NewMechanism(cfg)
@@ -39,19 +40,46 @@ func main() {
 			{
 				Principal:           "User:admin",
 				PermissionType:      kafka.ACLPermissionTypeAllow,
-				Operation:           kafka.ACLOperationTypeRead,
-				ResourceType:        kafka.ResourceTypeTopic,
+				Operation:           kafka.ACLOperationTypeAll,
+				ResourceType:        kafka.ResourceTypeCluster,
 				ResourcePatternType: kafka.PatternTypeLiteral,
-				ResourceName:        "fake-topic-for-alice",
+				ResourceName:        "kafka-cluster",
 				Host:                "*",
 			},
 			{
 				Principal:           "User:admin",
 				PermissionType:      kafka.ACLPermissionTypeAllow,
-				Operation:           kafka.ACLOperationTypeRead,
+				Operation:           kafka.ACLOperationTypeAll,
+				ResourceType:        kafka.ResourceTypeTopic,
+				ResourcePatternType: kafka.PatternTypeLiteral,
+				ResourceName:        "*",
+				Host:                "*",
+			},
+			{
+				Principal:           "User:admin",
+				PermissionType:      kafka.ACLPermissionTypeAllow,
+				Operation:           kafka.ACLOperationTypeAll,
+				ResourceType:        kafka.ResourceTypeTopic,
+				ResourcePatternType: kafka.PatternTypePrefixed,
+				ResourceName:        "*",
+				Host:                "*",
+			},
+			{
+				Principal:           "User:admin",
+				PermissionType:      kafka.ACLPermissionTypeAllow,
+				Operation:           kafka.ACLOperationTypeAll,
 				ResourceType:        kafka.ResourceTypeGroup,
 				ResourcePatternType: kafka.PatternTypeLiteral,
-				ResourceName:        "fake-group-for-bob",
+				ResourceName:        "*",
+				Host:                "*",
+			},
+			{
+				Principal:           "User:admin",
+				PermissionType:      kafka.ACLPermissionTypeAllow,
+				Operation:           kafka.ACLOperationTypeAll,
+				ResourceType:        kafka.ResourceTypeGroup,
+				ResourcePatternType: kafka.PatternTypePrefixed,
+				ResourceName:        "*",
 				Host:                "*",
 			},
 		},
