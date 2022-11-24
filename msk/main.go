@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	msk "github.com/aws/aws-sdk-go-v2/service/kafka"
 	"github.com/aws/aws-sdk-go-v2/service/kafka/types"
@@ -14,24 +15,60 @@ import (
 	"github.com/segmentio/kafka-go/sasl/aws_msk_iam_v2"
 )
 
-func main() {
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("eu-west-1"))
+func makeMSKPublic(svc *msk.Client, arn *string) error {
+	pub := "SERVICE_PROVIDED_EIPS"
+	info, err := svc.DescribeCluster(context.TODO(), &msk.DescribeClusterInput{ClusterArn: arn})
+
 	if err != nil {
-		log.Fatalf("unable to load SDK config, %v", err)
+		log.Fatal(err)
 	}
 
-	svc := msk.NewFromConfig(cfg)
-	resp, err := svc.ListClustersV2(context.TODO(), &msk.ListClustersV2Input{})
-	fmt.Println(resp)
+	status, err := svc.UpdateConnectivity(context.TODO(), &msk.UpdateConnectivityInput{
+		ClusterArn:     arn,
+		CurrentVersion: info.ClusterInfo.CurrentVersion,
+		ConnectivityInfo: &types.ConnectivityInfo{
+			PublicAccess: &types.PublicAccess{
+				Type: &pub,
+			},
+		},
+	})
 
-	//==================  Update ACL for the kafka ================
+	if err != nil {
+		return err
+	}
+	log.Println(status)
+
+	// Wait unit the cluster will be public
+	for {
+		data, err := svc.GetBootstrapBrokers(context.TODO(), &msk.GetBootstrapBrokersInput{
+			ClusterArn: arn,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		if data.BootstrapBrokerStringPublicSaslIam != nil {
+			fmt.Println("INFO: ", *data.BootstrapBrokerStringPublicSaslIam)
+			break
+		}
+		fmt.Println("MSK is updating")
+		time.Sleep(60 * time.Second)
+	}
+
+	return nil
+}
+
+func updateACLs(cfg aws.Config, svc *msk.Client, arn *string) error {
+	brokers, err := svc.GetBootstrapBrokers(context.TODO(), &msk.GetBootstrapBrokersInput{ClusterArn: arn})
+	if err != nil {
+		log.Fatal(err)
+	}
 	mechanism := aws_msk_iam_v2.NewMechanism(cfg)
 	transport := &kafka.Transport{
 		SASL: mechanism,
 		TLS:  &tls.Config{},
 	}
 	client := &kafka.Client{
-		Addr:      kafka.TCP("b-1-public.pocregion1.b07vs9.c9.kafka.eu-west-1.amazonaws.com:9198", "b-2-public.pocregion1.b07vs9.c9.kafka.eu-west-1.amazonaws.com:9198"),
+		Addr:      kafka.TCP(*brokers.BootstrapBrokerStringSaslIam),
 		Timeout:   5 * time.Second,
 		Transport: transport,
 	}
@@ -87,49 +124,27 @@ func main() {
 	})
 
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	for _, err := range res.Errors {
 		if err != nil {
-			log.Println(err)
+			return err
 		}
 	}
 
-	//========= Make cluster public ===========
-	arn := "arn:aws:kafka:eu-west-1:748861314284:cluster/poc-region1/96167cca-e109-43c8-a983-1e779e93f993-9"
-	pub := "SERVICE_PROVIDED_EIPS"
-	info, err := svc.DescribeCluster(context.TODO(), &msk.DescribeClusterInput{ClusterArn: &arn})
-	if err != nil {
-		log.Fatal(err)
-	}
-	status, err := svc.UpdateConnectivity(context.TODO(), &msk.UpdateConnectivityInput{
-		ClusterArn:     &arn,
-		CurrentVersion: info.ClusterInfo.CurrentVersion,
-		ConnectivityInfo: &types.ConnectivityInfo{
-			PublicAccess: &types.PublicAccess{
-				Type: &pub,
-			},
-		},
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(status)
+	return nil
+}
 
-	// Wait unit the cluster will be public
-	for {
-		data, err := svc.GetBootstrapBrokers(context.TODO(), &msk.GetBootstrapBrokersInput{
-			ClusterArn: &arn,
-		})
-		if err != nil {
-			log.Fatal(err)
-		}
-		if data.BootstrapBrokerStringPublicSaslIam != nil {
-			fmt.Println("INFO: ", *data.BootstrapBrokerStringPublicSaslIam)
-			break
-		}
-		fmt.Println("MSK is updating")
-		time.Sleep(60 * time.Second)
+func main() {
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("eu-west-1"))
+	if err != nil {
+		log.Fatalf("unable to load SDK config, %v", err)
 	}
+
+	svc := msk.NewFromConfig(cfg)
+
+	arn := "sdfsfsdf"
+	makeMSKPublic(svc, &arn)
+	updateACLs(cfg, svc, &arn)
 }
