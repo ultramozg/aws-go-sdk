@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -80,9 +81,10 @@ func updateACLs(cfg aws.Config, svc *msk.Client, arn *string) error {
 		SASL: mechanism,
 		TLS:  &tls.Config{},
 	}
+
 	client := &kafka.Client{
-		Addr:      kafka.TCP(*brokers.BootstrapBrokerStringSaslIam),
-		Timeout:   5 * time.Second,
+		Addr:      kafka.TCP(append(strings.Split(*brokers.BootstrapBrokerStringPublicSaslIam, ","), strings.Split(*brokers.BootstrapBrokerStringSaslIam, ",")...)...),
+		Timeout:   30 * time.Second,
 		Transport: transport,
 	}
 
@@ -168,6 +170,13 @@ func main() {
 	err = makeMSKPublic(svc, arn)
 	if err != nil {
 		log.Fatal(err)
+		os.Exit(1)
 	}
-	//updateACLs(cfg, svc, arn)
+
+	err = updateACLs(cfg, svc, arn)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+	os.Exit(0)
 }
