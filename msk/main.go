@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"flag"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -15,7 +17,25 @@ import (
 	"github.com/segmentio/kafka-go/sasl/aws_msk_iam_v2"
 )
 
+func isMSKPublic(svc *msk.Client, arn *string) (bool, error) {
+	data, err := svc.GetBootstrapBrokers(context.TODO(), &msk.GetBootstrapBrokersInput{
+		ClusterArn: arn,
+	})
+	if err != nil {
+		return false, err
+	}
+	if data.BootstrapBrokerStringPublicSaslIam != nil {
+		return true, nil
+	}
+	return false, nil
+}
+
 func makeMSKPublic(svc *msk.Client, arn *string) error {
+	if isPublic, err := isMSKPublic(svc, arn); err == nil && isPublic {
+		log.Println("MSK is already public")
+		return nil
+	}
+
 	pub := "SERVICE_PROVIDED_EIPS"
 	info, err := svc.DescribeCluster(context.TODO(), &msk.DescribeClusterInput{ClusterArn: arn})
 
@@ -23,7 +43,7 @@ func makeMSKPublic(svc *msk.Client, arn *string) error {
 		log.Fatal(err)
 	}
 
-	status, err := svc.UpdateConnectivity(context.TODO(), &msk.UpdateConnectivityInput{
+	_, err = svc.UpdateConnectivity(context.TODO(), &msk.UpdateConnectivityInput{
 		ClusterArn:     arn,
 		CurrentVersion: info.ClusterInfo.CurrentVersion,
 		ConnectivityInfo: &types.ConnectivityInfo{
@@ -36,24 +56,17 @@ func makeMSKPublic(svc *msk.Client, arn *string) error {
 	if err != nil {
 		return err
 	}
-	log.Println(status)
 
 	// Wait unit the cluster will be public
 	for {
-		data, err := svc.GetBootstrapBrokers(context.TODO(), &msk.GetBootstrapBrokersInput{
-			ClusterArn: arn,
-		})
-		if err != nil {
-			log.Fatal(err)
-		}
-		if data.BootstrapBrokerStringPublicSaslIam != nil {
-			fmt.Println("INFO: ", *data.BootstrapBrokerStringPublicSaslIam)
+		if flag, err := isMSKPublic(svc, arn); err == nil && flag {
 			break
 		}
 		fmt.Println("MSK is updating")
 		time.Sleep(60 * time.Second)
 	}
 
+	log.Println("MSK is public")
 	return nil
 }
 
@@ -137,6 +150,14 @@ func updateACLs(cfg aws.Config, svc *msk.Client, arn *string) error {
 }
 
 func main() {
+	arn := flag.String("arn", "", "Please provide arn of the MSK cluster")
+	flag.Parse()
+
+	if *arn == "" {
+		fmt.Println("Error: please provide the MSK cluster arn")
+		os.Exit(1)
+	}
+
 	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("eu-west-1"))
 	if err != nil {
 		log.Fatalf("unable to load SDK config, %v", err)
@@ -144,7 +165,9 @@ func main() {
 
 	svc := msk.NewFromConfig(cfg)
 
-	arn := "sdfsfsdf"
-	makeMSKPublic(svc, &arn)
-	updateACLs(cfg, svc, &arn)
+	err = makeMSKPublic(svc, arn)
+	if err != nil {
+		log.Fatal(err)
+	}
+	//updateACLs(cfg, svc, arn)
 }
