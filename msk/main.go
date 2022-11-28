@@ -31,13 +31,16 @@ func isMSKPublic(svc *msk.Client, arn *string) (bool, error) {
 	return false, nil
 }
 
-func makeMSKPublic(svc *msk.Client, arn *string) error {
-	if isPublic, err := isMSKPublic(svc, arn); err == nil && isPublic {
-		log.Println("MSK is already public")
+func makeMSKPublic(svc *msk.Client, arn *string, public bool) error {
+	if isPublic, err := isMSKPublic(svc, arn); (err == nil && isPublic && public) || (err == nil && !isPublic && !public) {
+		log.Println("MSK not need to update")
 		return nil
 	}
 
-	pub := "SERVICE_PROVIDED_EIPS"
+	publicConnectivity := "DISABLED"
+	if public {
+		publicConnectivity = "SERVICE_PROVIDED_EIPS"
+	}
 	info, err := svc.DescribeCluster(context.TODO(), &msk.DescribeClusterInput{ClusterArn: arn})
 
 	if err != nil {
@@ -49,7 +52,7 @@ func makeMSKPublic(svc *msk.Client, arn *string) error {
 		CurrentVersion: info.ClusterInfo.CurrentVersion,
 		ConnectivityInfo: &types.ConnectivityInfo{
 			PublicAccess: &types.PublicAccess{
-				Type: &pub,
+				Type: &publicConnectivity,
 			},
 		},
 	})
@@ -153,6 +156,8 @@ func updateACLs(cfg aws.Config, svc *msk.Client, arn *string) error {
 
 func main() {
 	arn := flag.String("arn", "", "Please provide arn of the MSK cluster")
+	public := flag.Bool("public", false, "Make MSK public")
+	acl := flag.Bool("acl", false, "Update acl for the user")
 	flag.Parse()
 
 	if *arn == "" {
@@ -167,16 +172,18 @@ func main() {
 
 	svc := msk.NewFromConfig(cfg)
 
-	err = makeMSKPublic(svc, arn)
+	err = makeMSKPublic(svc, arn, *public)
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
 	}
 
-	err = updateACLs(cfg, svc, arn)
-	if err != nil {
-		log.Fatal(err)
-		os.Exit(1)
+	if *acl {
+		err = updateACLs(cfg, svc, arn)
+		if err != nil {
+			log.Fatal(err)
+			os.Exit(1)
+		}
 	}
 	os.Exit(0)
 }
